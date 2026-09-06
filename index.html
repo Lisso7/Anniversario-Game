@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Match ❤</title>
+<style>
+  :root{
+    --pink-deep:#ff6fa5;
+    --pink-mid:#ffa8cb;
+    --pink-light:#ffe1ee;
+    --plum:#5c2a4d;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{
+    margin:0; padding:0; height:100%; overflow:hidden;
+    background:var(--plum);
+    font-family:-apple-system, "Helvetica Neue", Arial, sans-serif;
+    touch-action:manipulation;
+  }
+  #wrap{
+    position:fixed; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 50% 20%, #7a3a63, #3a1530 75%);
+  }
+  #stage{
+    position:relative;
+    width:100%; height:100%;
+    max-width:520px;
+    max-height:920px;
+    background:#000;
+    overflow:hidden;
+  }
+  canvas{
+    display:block;
+    position:absolute;
+    top:50%; left:50%;
+    transform:translate(-50%,-50%);
+    background:#000;
+    image-rendering:pixelated;
+    image-rendering:-moz-crisp-edges;
+    image-rendering:crisp-edges;
+  }
+  #hud{
+    position:absolute; top:0; left:0; right:0;
+    padding:14px 16px 0;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    pointer-events:none;
+    font-weight:700; color:#fff; text-shadow:0 2px 0 rgba(0,0,0,.25);
+    z-index:5;
+  }
+  #hearts{ display:flex; gap:4px; font-size:20px; }
+  #skipBtn{
+    pointer-events:auto;
+    background:rgba(0,0,0,.35);
+    color:#fff; border:none; border-radius:20px;
+    padding:6px 14px; font-size:13px; font-weight:600;
+    letter-spacing:.02em;
+    display:none;
+  }
+  #overlay{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    flex-direction:column;
+    text-align:center;
+    padding:32px;
+    background:linear-gradient(180deg, rgba(58,21,48,.55), rgba(58,21,48,.85));
+    color:#fff;
+    opacity:0; pointer-events:none;
+    transition:opacity .4s ease;
+    z-index:10;
+  }
+  #overlay.show{ opacity:1; pointer-events:auto; }
+  #overlay h1{ font-size:22px; margin:0 0 10px; font-weight:800; letter-spacing:.01em; }
+  #overlay p{ font-size:15px; line-height:1.5; margin:0 0 22px; color:var(--pink-light); max-width:340px; }
+  .btn{
+    background:var(--pink-deep);
+    color:#fff; border:none; border-radius:30px;
+    padding:14px 34px; font-size:16px; font-weight:800;
+    box-shadow:0 6px 0 #c94d80;
+    letter-spacing:.02em;
+  }
+  .btn:active{ transform:translateY(4px); box-shadow:0 2px 0 #c94d80; }
+  .btn.secondary{
+    background:transparent; color:var(--pink-light);
+    box-shadow:none; border:2px solid var(--pink-mid);
+    padding:10px 24px; font-size:13px; margin-top:12px;
+  }
+  #tapHint{
+    position:absolute; bottom:26px; left:0; right:0;
+    text-align:center; color:#fff; opacity:.85;
+    font-size:13px; font-weight:600; text-shadow:0 2px 0 rgba(0,0,0,.3);
+    z-index:4; pointer-events:none;
+    animation:pulse 1.6s ease-in-out infinite;
+    display:none;
+  }
+  @keyframes pulse{ 0%,100%{opacity:.4} 50%{opacity:.95} }
+
+  #quizPanel{
+    position:absolute; left:0; right:0; bottom:0;
+    padding:16px 16px 22px;
+    background:linear-gradient(180deg, rgba(58,21,48,0) 0%, rgba(58,21,48,.92) 22%, rgba(58,21,48,.97) 100%);
+    z-index:8;
+    opacity:0; transform:translateY(12px);
+    pointer-events:none;
+    transition:opacity .3s ease, transform .3s ease;
+  }
+  #quizPanel.show{ opacity:1; transform:translateY(0); pointer-events:auto; }
+  #quizQuestion{
+    color:#fff; font-weight:800; font-size:16px;
+    text-align:center; margin:0 0 12px;
+    text-shadow:0 2px 0 rgba(0,0,0,.25);
+  }
+  #quizOptions{ display:flex; flex-direction:column; gap:8px; }
+  .optBtn{
+    background:#fff5f9; color:#3a1530; border:none; border-radius:14px;
+    padding:12px 14px; font-size:14px; font-weight:700;
+    text-align:center;
+  }
+  .optBtn:active{ transform:scale(.98); }
+  .optBtn.correct{ background:#3fbf6a; color:#fff; }
+  .optBtn.wrong{ background:#e0417f; color:#fff; }
+  .optBtn.disabled{ opacity:.6; pointer-events:none; }
+  #quizFeedback{
+    text-align:center; color:#ffe1ee; font-weight:700; font-size:13px;
+    min-height:16px; margin-top:8px;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="c" width="200" height="356"></canvas>
+
+    <div id="hud">
+      <div id="hearts"></div>
+      <button id="skipBtn">Salta ▸</button>
+    </div>
+
+    <div id="tapHint">Tocca per saltare</div>
+
+    <div id="quizPanel">
+      <div id="quizQuestion">Domanda</div>
+      <div id="quizOptions"></div>
+      <div id="quizFeedback"></div>
+    </div>
+
+    <div id="overlay">
+      <h1 id="ovTitle">Titolo</h1>
+      <p id="ovText">Testo</p>
+      <button class="btn" id="ovBtn">Continua</button>
+      <button class="btn secondary" id="ovBtn2" style="display:none;">Riprova</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ============================================================
+  // SETUP
+  // ============================================================
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  const W = canvas.width, H = canvas.height;
+
+  function fitCanvas(){
+    const stage = document.getElementById('stage');
+    const sw = stage.clientWidth, sh = stage.clientHeight;
+    const scale = Math.min(sw/W, sh/H);
+    canvas.style.width  = Math.floor(W*scale) + 'px';
+    canvas.style.height = Math.floor(H*scale) + 'px';
+  }
+  window.addEventListener('resize', fitCanvas);
+  window.addEventListener('orientationchange', fitCanvas);
+  fitCanvas();
+
+  const overlay   = document.getElementById('overlay');
+  const ovTitle   = document.getElementById('ovTitle');
+  const ovText    = document.getElementById('ovText');
+  const ovBtn     = document.getElementById('ovBtn');
+  const ovBtn2    = document.getElementById('ovBtn2');
+  const heartsEl  = document.getElementById('hearts');
+  const tapHint   = document.getElementById('tapHint');
+  const skipBtn   = document.getElementById('skipBtn');
+  const quizPanel = document.getElementById('quizPanel');
+  const quizQ     = document.getElementById('quizQuestion');
+  const quizOpts  = document.getElementById('quizOptions');
+  const quizFb    = document.getElementById('quizFeedback');
+
+  const PAL = {
+    skin:'#f6c9a0', hairD:'#6b3b23', outline:'#3a1530',
+    dress:'#ff5c9a', dressSh:'#e0417f',
+    shirtBoy:'#7ec8e3', shirtBoySh:'#5aa6c2', jeansBoy:'#3a4a7a',
+    shoe:'#3a1530', white:'#fff5f9', heart:'#ff3d78',
+    skyTop:'#ffd3e6', skyBot:'#ffb3d1',
+    groundTop:'#ff9dc4', groundBot:'#e8558f',
+    farBuildA:'#ffc2dc', farBuildB:'#ffaacf',
+    rock:'#9b7a86', rockSh:'#7a5e69',
+    box:'#c98a55', boxSh:'#a86c3d',
+    puddle:'#8fd7ff', puddleSh:'#5fb8ea',
+    pharm:'#fff5f9', pharmRoof:'#ff5c9a', cross:'#3fbf6a',
+    barWall:'#7a3350', barWallDark:'#5c2540', barFloor:'#a85c86', barFloorDark:'#8a4570',
+    tableWood:'#8a5a3c', tableTop:'#c98a55',
+    apron:'#fff5f9', waiterHair:'#4f2a18', waiterShirt:'#5c2a4d',
+    glassLI:'#e8a23c', glassCap:'#ff8fc4', glassFoam:'#fff5f9',
+    nightTop:'#241033', nightBot:'#4a2350',
+    carBody:'#241522', carWindow:'#7fc7e8', carWheel:'#120a12',
+    bottleA:'#ff9dc4', bottleB:'#ffd3e6', bottleC:'#c9436b'
+  };
+
+  function px(x,y,w,h,color){
+    ctx.fillStyle = color;
+    ctx.fillRect(Math.round(x), Math.round(y), w, h);
+  }
+
+  function drawHeart(x,y,s,color){
+    color = color || PAL.heart;
+    px(x-2*s,y-2*s,2*s,2*s,color);
+    px(x+0*s,y-2*s,2*s,2*s,color);
+    px(x-2*s,y-0*s,6*s,2*s,color);
+    px(x-1*s,y+2*s,4*s,2*s,color);
+    px(x-0*s,y+4*s,2*s,2*s,color);
+  }
+
+  // ============================================================
+  // STATE MACHINE (whole game)
+  // ============================================================
+  const STATE = {
+    BOOT:'boot',
+    L1_INTRO:'l1_intro', L1_MESSAGE:'l1_message', L1_LEVEL:'l1_level',
+    L1_PHARMACY:'l1_pharmacy', L1_TEST:'l1_test', L1_COMPLETE:'l1_complete', L1_GAMEOVER:'l1_gameover',
+    L2_INTRO:'l2_intro', L2_QUIZ:'l2_quiz', L2_OUTRO:'l2_outro', L2_COMPLETE:'l2_complete'
+  };
+  let state = STATE.BOOT;
+  let lastT = 0, clock = 0;
+  let gameStarted = false;
+
+  function showOverlay(title, text, btnLabel, cb, btn2Label, cb2){
+    ovTitle.textContent = title;
+    ovText.textContent = text;
+    ovBtn.textContent = btnLabel;
+    ovBtn.onclick = () => { hideOverlay(); cb && cb(); };
+    if(btn2Label){
+      ovBtn2.style.display = 'inline-block';
+      ovBtn2.textContent = btn2Label;
+      ovBtn2.onclick = () => { hideOverlay(); cb2 && cb2(); };
+    } else {
+      ovBtn2.style.display = 'none';
+    }
+    overlay.classList.add('show');
+  }
+  function hideOverlay(){ overlay.classList.remove('show'); }
+
+  function renderHearts(n, max){
+    let s = '';
+    for(let i=0;i<max;i++) s += (i<n ? '❤️' : '🤍');
+    heartsEl.textContent = s;
+  }
+
+  // ============================================================
+  // FACE / SPRITE HELPERS
+  // ============================================================
+  // big stylised face used for the tinder cards + match screen
+  function drawFaceCard(cx, cy, hairColor, skin, small){
+    skin = skin || PAL.skin;
+    const s = small ? 0.7 : 1;
+    px(cx-12*s, cy-14*s, 24*s, 24*s, skin);
+    px(cx-14*s, cy-20*s, 28*s, 12*s, hairColor);
+    px(cx-14*s, cy-14*s, 6*s, 16*s, hairColor);
+    px(cx+8*s, cy-14*s, 6*s, 16*s, hairColor);
+    px(cx-7*s, cy-2*s, 4*s, 4*s, PAL.outline);
+    px(cx+3*s, cy-2*s, 4*s, 4*s, PAL.outline);
+    px(cx-4*s, cy+7*s, 8*s, 3*s, '#c9436b');
+  }
+
+  // small face used for seated busts / walking characters
+  function drawFaceMini(cx, cy, hairColor, skin, s){
+    skin = skin || PAL.skin;
+    s = s || 1;
+    px(cx-6*s, cy-7*s, 12*s, 12*s, skin);
+    px(cx-7*s, cy-10*s, 14*s, 6*s, hairColor);
+    px(cx-7*s, cy-7*s, 3*s, 8*s, hairColor);
+    px(cx+4*s, cy-7*s, 3*s, 8*s, hairColor);
+    px(cx-3.5*s, cy-1*s, 2*s, 2*s, PAL.outline);
+    px(cx+1.5*s, cy-1*s, 2*s, 2*s, PAL.outline);
+    px(cx-2*s, cy+3*s, 4*s, 1.5*s, '#c9436b');
+  }
+
+  // generic full-body walker for the bar intro/outro scenes
+  function drawWalker(x, y, kind, legFrame, lean){
+    lean = lean || 0;
+    const top   = kind==='girl' ? PAL.dress : PAL.shirtBoy;
+    const topSh = kind==='girl' ? PAL.dressSh : PAL.shirtBoySh;
+    const legOff = legFrame===0 ? 2 : -2;
+    px(x+3+lean, y+20, 4, 8-Math.max(0,legOff), PAL.skin);
+    px(x+9+lean, y+20, 4, 8+Math.max(0,legOff), PAL.skin);
+    px(x+3+lean, y+26, 4, 2, PAL.shoe);
+    px(x+9+lean, y+26, 4, 2, PAL.shoe);
+    px(x+lean, y+10, 16, 12, top);
+    px(x+lean, y+18, 16, 4, topSh);
+    px(x-2+lean, y+11, 3, 8, PAL.skin);
+    px(x+15+lean, y+11, 3, 8, PAL.skin);
+    drawFaceMini(x+8+lean, y+4, PAL.hairD, PAL.skin, 1);
+  }
+
+  // ============================================================
+  // LIVELLO 1a — INTRO: swipe stile Tinder
+  // ============================================================
+  const introCards = [
+    { name:'Marco, 27',    match:false, hair:'#e6c873' },
+    { name:'Luca, 29',     match:false, hair:'#2b2320' },
+    { name:'Gabriele, 25', match:true,  hair:PAL.hairD }
+  ];
+  let introT1 = 0, introCardIdx = 0, introCardX = 0, introCardRot = 0;
+  let introPhase1 = 'hold';
+  const HOLD_TIME = 1.1, SWIPE_TIME = 0.45;
+  let matchT = 0;
+
+  function resetIntro1(){
+    introT1=0; introCardIdx=0; introCardX=0; introCardRot=0; introPhase1='hold'; matchT=0;
+  }
+
+  function updateIntro1(dt){
+    introT1 += dt;
+    if(introCardIdx < introCards.length){
+      if(introPhase1 === 'hold'){
+        introCardX = 0; introCardRot = 0;
+        if(introT1 >= HOLD_TIME){ introPhase1='swipe'; introT1=0; }
+      } else if(introPhase1 === 'swipe'){
+        const p = Math.min(1, introT1 / SWIPE_TIME);
+        const dir = -1;
+        introCardX = dir * p * 160;
+        introCardRot = dir * p * 18;
+        if(p >= 1){
+          if(introCards[introCardIdx].match){
+            introPhase1 = 'match'; introT1 = 0;
+          } else {
+            introCardIdx++; introPhase1='hold'; introT1=0; introCardX=0; introCardRot=0;
+          }
+        }
+      }
+    } else if(introPhase1 === 'match'){
+      matchT += dt;
+      if(matchT > 2.6) goToMessage();
+    }
+  }
+
+  function drawPhoneFrame(){
+    const pw=124, ph=232, px0=(W-pw)/2, py0=18;
+    px(px0-6, py0-10, pw+12, ph+20, PAL.outline);
+    px(px0, py0, pw, ph, '#1c1024');
+    px(px0+4, py0+14, pw-8, ph-28, '#2a1424');
+    return {px0,py0,pw,ph};
+  }
+
+  function drawIntroTinder(){
+    px(0,0,W,H, '#3a1530');
+    for(let i=0;i<14;i++){
+      const hx = (i*37 + 20) % W;
+      const hy = (i*53 + 10) % H;
+      ctx.globalAlpha = 0.25;
+      drawHeart(hx, hy, 3, '#ff9dc4');
+      ctx.globalAlpha = 1;
+    }
+    if(introPhase1 === 'match'){ drawMatchScreen(); return; }
+
+    const {px0,py0,pw,ph} = drawPhoneFrame();
+    const cx0 = px0 + pw/2, cy0 = py0 + ph/2;
+
+    ctx.save();
+    ctx.translate(cx0 + introCardX, cy0);
+    ctx.rotate(introCardRot * Math.PI/180);
+    const cw = pw-20, ch = ph-40;
+    px(-cw/2, -ch/2, cw, ch, PAL.white);
+    px(-cw/2, -ch/2, cw, ch*0.62, '#ffd0e2');
+    const card = introCards[introCardIdx] || introCards[introCards.length-1];
+    drawFaceCard(0, -ch*0.19, card.hair, PAL.skin, false);
+    ctx.restore();
+
+    ctx.fillStyle = PAL.white;
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText((introCards[introCardIdx]||introCards[0]).name, cx0, py0+ph-14);
+
+    if(introPhase1==='hold'){
+      ctx.globalAlpha = 0.5 + 0.3*Math.sin(introT1*8);
+      ctx.fillStyle = PAL.white;
+      ctx.font = '8px monospace';
+      ctx.fillText('‹ swipe ›', cx0, py0+ph+2);
+      ctx.globalAlpha = 1;
+    }
+    ctx.textAlign = 'left';
+  }
+
+  function drawMatchScreen(){
+    ctx.fillStyle = 'rgba(255,92,154,0.15)';
+    ctx.fillRect(0,0,W,H);
+    const cy = H*0.34;
+    for(let i=0;i<10;i++){
+      const ang = (i/10)*Math.PI*2 + matchT*1.2;
+      const rad = 46 + 10*Math.sin(matchT*3+i);
+      drawHeart(W/2+Math.cos(ang)*rad, cy+Math.sin(ang)*rad, 2, i%2? PAL.heart : PAL.white);
+    }
+    const bob = Math.sin(matchT*4)*2;
+    drawFaceCard(W/2-30, cy+bob, PAL.hairD);
+    drawFaceCard(W/2+30, cy-bob, PAL.hairD);
+    drawHeart(W/2, cy, 3, PAL.white);
+
+    ctx.textAlign='center';
+    ctx.fillStyle = PAL.white;
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText('È UN MATCH!', W/2, cy+62);
+    ctx.font = '9px monospace';
+    ctx.fillStyle = '#ffd7e8';
+    ctx.fillText('Tu e Gabriele vi siete piaciuti', W/2, cy+78);
+    ctx.textAlign='left';
+  }
+
+  function goToMessage(){
+    state = STATE.L1_MESSAGE;
+    tapHint.textContent = 'Tocca per continuare';
+    tapHint.style.display = 'block';
+    skipBtn.style.display = 'none';
+  }
+
+  // ============================================================
+  // LIVELLO 1b — messaggio
+  // ============================================================
+  function drawMessage(){
+    px(0,0,W,H, PAL.skyBot);
+    for(let i=0;i<10;i++){
+      ctx.globalAlpha=0.18;
+      drawHeart((i*47+15)%W, (i*61+20)%H, 2, PAL.white);
+      ctx.globalAlpha=1;
+    }
+    const bx=16, by=H*0.36, bw=W-32, bh=90;
+    px(bx,by,bw,bh, PAL.white);
+    px(bx,by,bw,6, PAL.dress);
+    ctx.fillStyle = PAL.outline;
+    ctx.font = '9px monospace';
+    ctx.textAlign='center';
+    ctx.fillText('Quando saremo entrambi negativi,', W/2, by+22);
+    ctx.fillText('ti va di vederci?', W/2, by+34);
+    ctx.font='7px monospace';
+    ctx.fillStyle = '#a9557a';
+    ctx.fillText('— Gabriele', W/2, by+bh-10);
+    ctx.textAlign='left';
+  }
+
+  // ============================================================
+  // LIVELLO 1c — corsa con ostacoli
+  // ============================================================
+  const GROUND_Y = H - 46;
+  const GRAVITY = 620;
+  const JUMP_V = -230;
+  let girl, obstacles, distance, targetDistance, scrollSpeed, spawnTimer, hearts, maxHearts, invuln, bgHeartT;
+  let pharmacyX;
+
+  function resetLevel(){
+    girl = { x:40, y:GROUND_Y-28, vy:0, w:16, h:28, onGround:true, legFrame:0, legT:0, stumble:0 };
+    obstacles = [];
+    distance = 0;
+    targetDistance = 1600;
+    scrollSpeed = 78;
+    spawnTimer = 1.0;
+    hearts = 3; maxHearts = 3;
+    invuln = 0;
+    bgHeartT = 0;
+    pharmacyX = null;
+    renderHearts(hearts, maxHearts);
+    tapHint.textContent = 'Tocca per saltare';
+    tapHint.style.display = 'block';
+    skipBtn.style.display = 'none';
+  }
+
+  function jump(){
+    if(state === STATE.L1_LEVEL && girl.onGround){
+      girl.vy = JUMP_V; girl.onGround = false;
+    }
+  }
+
+  function spawnObstacle(){
+    const types = ['rock','box','puddle'];
+    const t = types[Math.floor(Math.random()*types.length)];
+    let w=14,h=14;
+    if(t==='rock'){ w=14;h=12; }
+    if(t==='box'){ w=14;h=16; }
+    if(t==='puddle'){ w=20;h=6; }
+    obstacles.push({ x: W+10, y: GROUND_Y - h, w, h, type:t });
+  }
+
+  function resetAndStartLevel(){
+    resetLevel();
+    state = STATE.L1_LEVEL;
+  }
+
+  function updateLevel(dt){
+    distance += scrollSpeed*dt;
+    bgHeartT += dt;
+
+    if(distance >= targetDistance && pharmacyX === null) pharmacyX = W + 30;
+
+    girl.vy += GRAVITY*dt;
+    girl.y += girl.vy*dt;
+    if(girl.y >= GROUND_Y-28){ girl.y = GROUND_Y-28; girl.vy=0; girl.onGround=true; }
+
+    if(girl.onGround){
+      girl.legT += dt*8;
+      girl.legFrame = Math.floor(girl.legT)%2;
+    }
+
+    if(invuln>0) invuln -= dt;
+
+    if(pharmacyX === null){
+      spawnTimer -= dt;
+      if(spawnTimer <= 0){ spawnObstacle(); spawnTimer = 1.0 + Math.random()*0.7; }
+    }
+
+    for(const o of obstacles) o.x -= scrollSpeed*dt;
+    obstacles = obstacles.filter(o => o.x + o.w > -10);
+
+    if(invuln<=0){
+      for(const o of obstacles){
+        if(rectHit(girl.x, girl.y, girl.w, girl.h, o.x, o.y, o.w, o.h)){
+          hearts -= 1; invuln = 1.1; girl.stumble = 0.35;
+          renderHearts(hearts, maxHearts);
+          if(hearts<=0){
+            state = STATE.L1_GAMEOVER;
+            showOverlay('Ops! Sei caduta', 'Riprova il percorso: fai attenzione agli ostacoli sul marciapiede.', 'Riprova', resetAndStartLevel);
+          }
+          break;
+        }
+      }
+    }
+    if(girl.stumble>0) girl.stumble -= dt;
+
+    if(pharmacyX !== null){
+      pharmacyX -= scrollSpeed*dt;
+      if(pharmacyX < girl.x + girl.w - 6){
+        state = STATE.L1_PHARMACY;
+        pharmacyEnterT = 0;
+        tapHint.style.display = 'none';
+      }
+    }
+  }
+
+  function rectHit(ax,ay,aw,ah,bx,by,bw,bh){
+    return ax < bx+bw-3 && ax+aw-3 > bx && ay < by+bh && ay+ah > by;
+  }
+
+  function drawBackground(){
+    const g = ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0, PAL.skyTop); g.addColorStop(1, PAL.skyBot);
+    ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+
+    const off1 = (distance*0.15)%160;
+    for(let i=-1;i<4;i++){
+      const bx = i*80 - off1;
+      px(bx, GROUND_Y-70, 46, 70, PAL.farBuildA);
+      px(bx+50, GROUND_Y-52, 34, 52, PAL.farBuildB);
+    }
+    for(let i=0;i<6;i++){
+      const hx = (i*70 + 30 - distance*0.4) % (W+40);
+      const hy = 30 + (i*23)%80 + Math.sin(bgHeartT+i)*4;
+      ctx.globalAlpha = 0.5;
+      drawHeart(hx<0?hx+W+40:hx, hy, 2, '#ffffff');
+      ctx.globalAlpha = 1;
+    }
+    px(0, GROUND_Y, W, H-GROUND_Y, PAL.groundBot);
+    px(0, GROUND_Y, W, 4, PAL.groundTop);
+    const off2 = (distance)%16;
+    for(let x=-off2; x<W; x+=16) px(x, GROUND_Y+4, 8, 3, 'rgba(255,255,255,0.25)');
+  }
+
+  function drawObstacle(o){
+    if(o.type==='rock'){
+      px(o.x, o.y+4, o.w, o.h-4, PAL.rock);
+      px(o.x+2, o.y, o.w-4, 6, PAL.rock);
+      px(o.x+2, o.y+o.h-4, o.w-6, 3, PAL.rockSh);
+    } else if(o.type==='box'){
+      px(o.x, o.y, o.w, o.h, PAL.box);
+      px(o.x, o.y+o.h-4, o.w, 4, PAL.boxSh);
+      px(o.x, o.y+o.h/2-1, o.w, 2, PAL.boxSh);
+    } else if(o.type==='puddle'){
+      px(o.x, o.y+2, o.w, o.h-2, PAL.puddle);
+      px(o.x+2, o.y+o.h-2, o.w-4, 2, PAL.puddleSh);
+    }
+  }
+
+  function drawPlayerTag(){
+    const bob = Math.sin(bgHeartT*4)*2;
+    const ax = girl.x + girl.w/2, ay = girl.y - 20 + bob;
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 7px monospace';
+    ctx.fillStyle = PAL.outline;
+    ctx.fillText('Francesca', ax+0.5, ay-6+0.5);
+    ctx.fillStyle = PAL.white;
+    ctx.fillText('Francesca', ax, ay-6);
+    ctx.fillStyle = PAL.heart;
+    ctx.beginPath();
+    ctx.moveTo(ax-4, ay-2); ctx.lineTo(ax+4, ay-2); ctx.lineTo(ax, ay+4);
+    ctx.closePath(); ctx.fill();
+    ctx.textAlign = 'left';
+  }
+
+  function drawGirl(){
+    const gx = girl.x, gy = girl.y;
+    const lean = girl.stumble>0 ? 3 : 0;
+    const legOff = girl.onGround ? (girl.legFrame===0?2:-2) : 0;
+    px(gx+3+lean, gy+20, 4, 8-Math.max(0,legOff), PAL.skin);
+    px(gx+9+lean, gy+20, 4, 8+Math.max(0,legOff), PAL.skin);
+    px(gx+3+lean, gy+26, 4, 2, PAL.shoe);
+    px(gx+9+lean, gy+26, 4, 2, PAL.shoe);
+    px(gx+lean, gy+10, 16, 12, PAL.dress);
+    px(gx+lean, gy+18, 16, 4, PAL.dressSh);
+    px(gx-2+lean, gy+11, 3, 8, PAL.skin);
+    px(gx+15+lean, gy+11, 3, 8, PAL.skin);
+    px(gx+2+lean, gy-2, 12, 12, PAL.skin);
+    px(gx+lean, gy-6, 16, 8, PAL.hairD);
+    px(gx+lean, gy-2, 4, 14, PAL.hairD);
+    px(gx+12+lean, gy-2, 4, 14, PAL.hairD);
+    px(gx+5+lean, gy+2, 2, 2, PAL.outline);
+    px(gx+9+lean, gy+2, 2, 2, PAL.outline);
+  }
+
+  function drawPharmacyBuilding(x){
+    const w=70, h=90, y=GROUND_Y-h;
+    px(x, y, w, h, PAL.pharm);
+    px(x, y, w, 14, PAL.pharmRoof);
+    px(x+w/2-10, y+h-30, 20, 30, '#c96fa0');
+    px(x+w/2-10, y+h-30, 20, 2, '#8a3c67');
+    px(x+w/2-10, y+18, 20, 20, PAL.white);
+    px(x+w/2-3, y+21, 6, 14, PAL.cross);
+    px(x+w/2-10, y+25, 20, 6, PAL.cross);
+    px(x+8, y+40, 14, 14, '#bfe8ff');
+    px(x+w-22, y+40, 14, 14, '#bfe8ff');
+  }
+
+  function drawLevel(){
+    drawBackground();
+    if(pharmacyX !== null) drawPharmacyBuilding(pharmacyX);
+    for(const o of obstacles) drawObstacle(o);
+    if(invuln>0 && Math.floor(invuln*20)%2===0){
+      // flicker
+    } else {
+      drawGirl();
+      drawPlayerTag();
+    }
+    const pw = W-30;
+    px(15, 8, pw, 6, 'rgba(255,255,255,0.35)');
+    const prog = Math.min(1, distance/targetDistance);
+    px(15, 8, pw*prog, 6, PAL.white);
+  }
+
+  // ============================================================
+  // LIVELLO 1d — farmacia + tampone
+  // ============================================================
+  let pharmacyEnterT = 0;
+  let testT = 0;
+  let testPhase = 'swab';
+
+  function updatePharmacy(dt){
+    pharmacyEnterT += dt;
+    if(pharmacyEnterT > 1.0){
+      state = STATE.L1_TEST;
+      testT = 0; testPhase='swab';
+    }
+  }
+  function drawPharmacy(){
+    const p = Math.min(1, pharmacyEnterT/1.0);
+    px(0,0,W,H, PAL.pharm);
+    ctx.globalAlpha = 1-p;
+    drawLevel();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = PAL.outline;
+    ctx.font='10px monospace';
+    ctx.textAlign='center';
+    ctx.globalAlpha = p;
+    ctx.fillText('Entri in farmacia...', W/2, H/2);
+    ctx.globalAlpha = 1;
+    ctx.textAlign='left';
+  }
+
+  function updateTest(dt){
+    testT += dt;
+    if(testPhase==='swab' && testT>1.4){ testPhase='waiting'; testT=0; }
+    else if(testPhase==='waiting' && testT>1.8){ testPhase='result'; testT=0; }
+    else if(testPhase==='result' && testT>1.6){
+      state = STATE.L1_COMPLETE;
+      showOverlay('Livello 1 completato! 🎉', 'Il tampone è negativo: il vostro primo appuntamento si può fare!', 'Continua ▸', goToL2Intro);
+    }
+  }
+
+  function drawTest(){
+    px(0,0,W,H, PAL.pharm);
+    px(0, H*0.62, W, H*0.38, '#f2c9dd');
+    px(0, H*0.62, W, 4, '#e07fb0');
+    const kx=W/2-30, ky=H*0.4;
+    px(kx, ky, 60, 40, PAL.white);
+    px(kx, ky, 60, 10, PAL.dress);
+    ctx.fillStyle = PAL.outline;
+    ctx.font='7px monospace';
+    ctx.textAlign='center';
+    ctx.fillText('TAMPONE', W/2, ky+7);
+    ctx.fillText('COVID-19', W/2, ky+24);
+
+    if(testPhase==='swab'){
+      ctx.font='8px monospace'; ctx.fillStyle=PAL.outline;
+      ctx.fillText('Esegue il test...', W/2, ky+58);
+    } else if(testPhase==='waiting'){
+      const dots = '.'.repeat(1+Math.floor(testT*2)%3);
+      ctx.font='8px monospace'; ctx.fillStyle=PAL.outline;
+      ctx.fillText('Attesa risultato'+dots, W/2, ky+58);
+      drawHeart(W/2, ky+70, 2+Math.sin(testT*6), PAL.heart);
+    } else if(testPhase==='result'){
+      px(W/2-4, ky+50, 8, 24, PAL.white);
+      px(W/2-4, ky+50, 8, 3, PAL.outline);
+      const showLine = testT>0.3;
+      if(showLine) px(W/2-4, ky+58, 8, 3, '#3fbf6a');
+      ctx.font='bold 11px monospace'; ctx.fillStyle = '#2f9e57';
+      if(showLine) ctx.fillText('NEGATIVO ✔', W/2, ky+94);
+      for(let i=0;i<8;i++){
+        ctx.globalAlpha=0.6;
+        drawHeart(W/2 + Math.cos(testT*3+i)*40, ky+40+Math.sin(testT*3+i)*10, 2, PAL.heart);
+        ctx.globalAlpha=1;
+      }
+    }
+    ctx.textAlign='left';
+  }
+
+  // ============================================================
+  // LIVELLO 2a — INTRO: entrano nel bar
+  // ============================================================
+  let introPhase2 = 'walkin', introT2 = 0;
+  const WALK_TARGET_G = 96, WALK_TARGET_F = 118;
+  let girlWX = -30, boyWX = -50, waiterX = W+30, bubbleShown = false;
+
+  function resetIntro2(){
+    introPhase2='walkin'; introT2=0; girlWX=-30; boyWX=-50; waiterX=W+30; bubbleShown=false;
+  }
+
+  function goToL2Intro(){
+    resetIntro2();
+    state = STATE.L2_INTRO;
+    heartsEl.textContent = '';
+    tapHint.style.display = 'none';
+    skipBtn.style.display = 'block';
+  }
+
+  function updateIntro2(dt){
+    introT2 += dt;
+    if(introPhase2==='walkin'){
+      girlWX += dt*46; boyWX += dt*46;
+      if(girlWX>=WALK_TARGET_F && boyWX>=WALK_TARGET_G){
+        girlWX=WALK_TARGET_F; boyWX=WALK_TARGET_G;
+        introPhase2='waiter'; introT2=0;
+      }
+    } else if(introPhase2==='waiter'){
+      waiterX -= dt*70;
+      if(waiterX<=140) waiterX=140;
+      if(waiterX<=140 && !bubbleShown){ bubbleShown=true; introT2=0; }
+      if(bubbleShown && introT2>3.8){
+        goToQuiz(0);
+      }
+    }
+  }
+
+  function drawBar(){
+    px(0,0,W,H*0.6, PAL.barWall);
+    px(0,0,W,10, PAL.barWallDark);
+    for(let i=0;i<3;i++){
+      const sy = 40+i*34;
+      px(10, sy, W-20, 3, PAL.barWallDark);
+      for(let b=0;b<5;b++){
+        const bx = 16+b*32;
+        px(bx, sy-16, 6, 16, [PAL.bottleA,PAL.bottleB,PAL.bottleC][(b+i)%3]);
+        px(bx+1, sy-19, 4, 4, PAL.barWallDark);
+      }
+    }
+    px(0,H*0.6,W,H*0.4, PAL.barFloor);
+    for(let x=0;x<W;x+=20) px(x,H*0.6,10,H*0.4,PAL.barFloorDark);
+    for(let i=0;i<8;i++){
+      ctx.globalAlpha=0.22;
+      drawHeart((i*53+20)%W, 20+(i*29)%60, 2, PAL.white);
+      ctx.globalAlpha=1;
+    }
+  }
+
+  function drawTableScene(showGlassGirl, showGlassBoy){
+    const tx=W/2, ty=H*0.72;
+    px(tx-38, ty, 76, 8, PAL.tableWood);
+    px(tx-34, ty-6, 68, 8, PAL.tableTop);
+    drawFaceMini(tx-18, ty-24, PAL.hairD, PAL.skin, 1.3);
+    px(tx-18-11, ty-14, 22, 16, PAL.dress);
+    drawFaceMini(tx+18, ty-24, PAL.hairD, PAL.skin, 1.3);
+    px(tx+18-11, ty-14, 22, 16, PAL.shirtBoy);
+    if(showGlassGirl){ px(tx-30, ty-14, 8, 12, PAL.glassLI); px(tx-30, ty-16, 8, 2, PAL.glassFoam); }
+    if(showGlassBoy){ px(tx+22, ty-14, 8, 12, PAL.glassCap); px(tx+22, ty-16, 8, 2, PAL.glassFoam); }
+  }
+
+  function wrapToLines(text, maxChars){
+    const words = text.split(' ');
+    let line = '', lines = [];
+    for(const w of words){
+      const test = line ? line+' '+w : w;
+      if(test.length > maxChars){ lines.push(line); line = w; }
+      else line = test;
+    }
+    if(line) lines.push(line);
+    return lines;
+  }
+
+  function drawSpeechBubble(x, y, text){
+    const maxChars = 15;
+    const lines = wrapToLines(text, maxChars);
+    const lineH = 10;
+    const w = 108;
+    const h = lines.length*lineH + 12;
+    const top = y - h - 10;
+    px(x-w/2, top, w, h, PAL.white);
+    px(x-w/2, top, w, 3, PAL.dress);
+    px(x-4, y-10, 8, 6, PAL.white);
+    ctx.fillStyle = PAL.outline;
+    ctx.font = '8px monospace';
+    ctx.textAlign = 'center';
+    lines.forEach((l,i)=> ctx.fillText(l, x, top + 12 + i*lineH));
+    ctx.textAlign = 'left';
+  }
+
+  function drawIntroBar(){
+    drawBar();
+    const lf = Math.floor(clock*8)%2;
+    drawWalker(boyWX, H*0.6-8, 'boy', lf);
+    drawWalker(girlWX, H*0.6-8, 'girl', lf);
+
+    if(introPhase2==='waiter'){
+      px(waiterX, H*0.6-8+10, 16, 12, PAL.waiterShirt);
+      px(waiterX-1, H*0.6-8+18, 18, 10, PAL.apron);
+      px(waiterX, H*0.6-8+26, 4, 6, PAL.shoe);
+      px(waiterX+10, H*0.6-8+26, 4, 6, PAL.shoe);
+      drawFaceMini(waiterX+8, H*0.6-8+4, PAL.waiterHair, PAL.skin, 1);
+      if(bubbleShown){
+        drawSpeechBubble(waiterX+8, H*0.6-8-6, 'Cosa desiderate ordinare?');
+      }
+    }
+  }
+
+  function goToQuiz(i){
+    state = STATE.L2_QUIZ;
+    skipBtn.style.display = 'none';
+    currentQuiz = i;
+    showQuiz(quizzes[i]);
+  }
+
+  // ============================================================
+  // LIVELLO 2b — QUIZ
+  // ============================================================
+  let currentQuiz = 0;
+  let glassGirlShown = false, glassBoyShown = false;
+  const quizzes = [
+    { q:'Francesca ordina:', options:['Mojito','Long Island','Spritz'], correct:1, onCorrect:()=>{ glassGirlShown=true; } },
+    { q:'Gabriele ordina:', options:['Negroni','Gin Tonic','Caipiroska alla fragola'], correct:2, onCorrect:()=>{ glassBoyShown=true; } },
+    { q:'Quanti drink ha bevuto Francesca in totale?', options:['2','3','4'], correct:1, onCorrect:()=>{} },
+    { q:'Quanti drink ha bevuto Gabriele in totale?', options:['2','3','4'], correct:1, onCorrect:()=>{} }
+  ];
+
+  function showQuiz(quiz){
+    quizQ.textContent = quiz.q;
+    quizFb.textContent = '';
+    quizOpts.innerHTML = '';
+    quiz.options.forEach((opt, idx) => {
+      const b = document.createElement('button');
+      b.className = 'optBtn';
+      b.textContent = opt;
+      b.onclick = () => handleAnswer(quiz, idx, b);
+      quizOpts.appendChild(b);
+    });
+    quizPanel.classList.add('show');
+  }
+
+  function handleAnswer(quiz, idx, btnEl){
+    const buttons = Array.from(quizOpts.children);
+    buttons.forEach(b => b.classList.add('disabled'));
+    if(idx === quiz.correct){
+      btnEl.classList.add('correct');
+      quizFb.textContent = 'Esatto! ❤';
+      quiz.onCorrect && quiz.onCorrect();
+      setTimeout(()=>{
+        quizPanel.classList.remove('show');
+        if(currentQuiz < quizzes.length-1){
+          currentQuiz++;
+          setTimeout(()=> showQuiz(quizzes[currentQuiz]), 350);
+        } else {
+          goToOutro();
+        }
+      }, 850);
+    } else {
+      btnEl.classList.add('wrong');
+      quizFb.textContent = 'Non proprio... riprova';
+      setTimeout(()=>{
+        buttons.forEach(b => { b.classList.remove('disabled'); b.classList.remove('wrong'); });
+      }, 650);
+    }
+  }
+
+  function drawQuizBackdrop(){
+    drawBar();
+    drawTableScene(glassGirlShown, glassBoyShown);
+  }
+
+  // ============================================================
+  // LIVELLO 2c — OUTRO: verso l'auto + bacio
+  // ============================================================
+  let outroPhase = 'walkout', outroT = 0, coupleX = W/2;
+
+  function goToOutro(){
+    quizPanel.classList.remove('show');
+    state = STATE.L2_OUTRO;
+    outroPhase='walkout'; outroT=0; coupleX = W/2;
+  }
+
+  function updateOutro(dt){
+    outroT += dt;
+    if(outroPhase==='walkout'){
+      coupleX += dt*50;
+      if(coupleX > W+30){ outroPhase='street'; outroT=0; coupleX = -20; }
+    } else if(outroPhase==='street'){
+      coupleX += dt*40;
+      if(coupleX >= W*0.42){ coupleX = W*0.42; outroPhase='kiss'; outroT=0; }
+    } else if(outroPhase==='kiss'){
+      if(outroT > 2.4){
+        state = STATE.L2_COMPLETE;
+        showOverlay('Livello 2 completato! 🎉', 'Serata perfetta: drink giusti e primo bacio in macchina. Il livello 3 arriverà presto.', 'Rigioca dall\'inizio', restartWholeGame);
+      }
+    }
+  }
+
+  function drawNightStreet(){
+    const g = ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0, PAL.nightTop); g.addColorStop(1, PAL.nightBot);
+    ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+    for(let i=0;i<20;i++){
+      ctx.globalAlpha = 0.5+0.5*Math.sin(clock*2+i);
+      px((i*37+10)%W, (i*17+8)%110, 1.5, 1.5, '#ffffff');
+      ctx.globalAlpha=1;
+    }
+    px(0, H-70, W, 70, '#3a2a3e');
+    px(0, H-70, W, 4, '#5c4560');
+  }
+
+  function drawCar(x,y){
+    px(x, y+10, 90, 24, PAL.carBody);
+    px(x+10, y, 70, 16, PAL.carBody);
+    px(x+14, y+3, 26, 11, PAL.carWindow);
+    px(x+46, y+3, 22, 11, PAL.carWindow);
+    px(x+12, y+30, 14, 14, PAL.carWheel);
+    px(x+64, y+30, 14, 14, PAL.carWheel);
+    px(x+86, y+16, 6, 6, '#ffe9a8');
+  }
+
+  function drawOutro(){
+    if(outroPhase==='walkout'){
+      drawBar();
+      const lf = Math.floor(clock*8)%2;
+      drawWalker(coupleX-18, H*0.6-8, 'girl', lf);
+      drawWalker(coupleX+2, H*0.6-8, 'boy', lf);
+    } else {
+      drawNightStreet();
+      const carX = W*0.5, carY = H-118;
+      drawCar(carX, carY);
+      if(outroPhase==='street'){
+        const lf = Math.floor(clock*8)%2;
+        drawWalker(coupleX-18, H-70-28, 'girl', lf);
+        drawWalker(coupleX+2, H-70-28, 'boy', lf);
+      } else if(outroPhase==='kiss'){
+        px(carX+22, carY+2, 10, 10, '#1a1220');
+        px(carX+38, carY+2, 10, 10, '#1a1220');
+        const s = 3+Math.sin(outroT*4)*0.8;
+        drawHeart(carX+45, carY-12-Math.sin(outroT*3)*3, s, PAL.heart);
+        for(let i=0;i<6;i++){
+          const ang = outroT*1.4 + i*(Math.PI*2/6);
+          drawHeart(carX+45+Math.cos(ang)*34, carY+8+Math.sin(ang)*20, 2, i%2? PAL.heart:'#ffffff');
+        }
+      }
+    }
+  }
+
+  // ============================================================
+  // RESTART / BOOT
+  // ============================================================
+  function restartWholeGame(){
+    resetIntro1();
+    glassGirlShown=false; glassBoyShown=false; currentQuiz=0;
+    heartsEl.textContent = '';
+    tapHint.style.display='none';
+    skipBtn.style.display='none';
+    state = STATE.L1_INTRO;
+    gameStarted = true;
+    skipBtn.style.display='block';
+  }
+
+  function loop(t){
+    if(!lastT) lastT = t;
+    let dt = (t-lastT)/1000;
+    if(dt>0.05) dt = 0.05;
+    lastT = t;
+    clock += dt;
+
+    if(state===STATE.L1_INTRO && gameStarted) updateIntro1(dt);
+    else if(state===STATE.L1_LEVEL) updateLevel(dt);
+    else if(state===STATE.L1_PHARMACY) updatePharmacy(dt);
+    else if(state===STATE.L1_TEST) updateTest(dt);
+    else if(state===STATE.L2_INTRO && gameStarted) updateIntro2(dt);
+    else if(state===STATE.L2_OUTRO) updateOutro(dt);
+
+    ctx.clearRect(0,0,W,H);
+    if(state===STATE.L1_INTRO) drawIntroTinder();
+    else if(state===STATE.L1_MESSAGE) drawMessage();
+    else if(state===STATE.L1_LEVEL) drawLevel();
+    else if(state===STATE.L1_PHARMACY) drawPharmacy();
+    else if(state===STATE.L1_TEST || state===STATE.L1_COMPLETE) drawTest();
+    else if(state===STATE.L2_INTRO) drawIntroBar();
+    else if(state===STATE.L2_QUIZ) drawQuizBackdrop();
+    else if(state===STATE.L2_OUTRO || state===STATE.L2_COMPLETE) drawOutro();
+    else if(state===STATE.L1_GAMEOVER) drawLevel();
+
+    requestAnimationFrame(loop);
+  }
+
+  // ============================================================
+  // INPUT
+  // ============================================================
+  function handleTap(e){
+    if(e) e.preventDefault();
+    if(state===STATE.L1_MESSAGE){ resetAndStartLevel(); return; }
+    if(state===STATE.L1_LEVEL){ jump(); }
+  }
+  const stageEl = document.getElementById('stage');
+  stageEl.addEventListener('touchstart', function(e){
+    if(e.target===skipBtn || e.target===ovBtn || e.target===ovBtn2 || e.target.classList.contains('optBtn')) return;
+    handleTap(e);
+  }, {passive:false});
+  stageEl.addEventListener('mousedown', function(e){
+    if(e.target===skipBtn || e.target===ovBtn || e.target===ovBtn2 || e.target.classList.contains('optBtn')) return;
+    handleTap(e);
+  });
+
+  skipBtn.addEventListener('click', function(){
+    if(state===STATE.L1_INTRO) goToMessage();
+    else if(state===STATE.L2_INTRO) goToQuiz(0);
+  });
+
+  function start(){
+    heartsEl.textContent = '';
+    tapHint.style.display='none';
+    skipBtn.style.display='block';
+    resetIntro1();
+    state = STATE.L1_INTRO;
+    showOverlay(
+      'Prima di iniziare',
+      'Guarda l\'introduzione: la protagonista sta cercando il match giusto su un\'app di incontri.',
+      'Inizia ▸',
+      ()=>{ gameStarted = true; }
+    );
+  }
+  start();
+  requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
