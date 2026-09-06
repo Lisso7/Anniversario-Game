@@ -126,6 +126,60 @@
     min-height:16px; margin-top:8px;
   }
 
+  #finaleScreen{
+    position:absolute; inset:0;
+    display:none;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:14px;
+    padding:22px 16px;
+    background:linear-gradient(160deg, #ffb3d1, #ff6fa5 55%, #c9436b);
+    z-index:12;
+  }
+  #finaleScreen.show{ display:flex; }
+  #finaleCard{
+    width:100%;
+    max-width:400px;
+    max-height:78%;
+    background:#fffaf3;
+    border-radius:14px;
+    box-shadow:0 10px 30px rgba(58,21,48,.35);
+    padding:22px 20px 18px;
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+  }
+  #finaleTitle{
+    font-family:Georgia, 'Times New Roman', serif;
+    font-size:19px;
+    font-weight:700;
+    color:#8a1a4e;
+    text-align:center;
+    line-height:1.35;
+  }
+  #finaleDivider{
+    width:56px; height:3px; margin:12px auto 14px;
+    background:#ff6fa5; border-radius:2px; flex-shrink:0;
+  }
+  #finaleBody{
+    font-family:Georgia, 'Times New Roman', serif;
+    font-size:15px;
+    line-height:1.6;
+    color:#3a1530;
+    text-align:left;
+    flex:1;
+    min-height:0;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    word-break:break-word;
+    overflow-wrap:anywhere;
+    padding-right:4px;
+  }
+  #finaleReplayBtn{
+    color:#fff5f9; border-color:rgba(255,255,255,.7);
+  }
+
   #l3Hint{
     position:absolute; top:50px; left:16px; right:16px;
     text-align:center; z-index:6;
@@ -199,6 +253,15 @@
       <button class="btn" id="ovBtn">Continua</button>
       <button class="btn secondary" id="ovBtn2" style="display:none;">Riprova</button>
     </div>
+
+    <div id="finaleScreen">
+      <div id="finaleCard">
+        <div id="finaleTitle"></div>
+        <div id="finaleDivider"></div>
+        <div id="finaleBody"></div>
+      </div>
+      <button class="btn secondary" id="finaleReplayBtn">Rigioca dall'inizio</button>
+    </div>
   </div>
 </div>
 
@@ -244,6 +307,10 @@
   const dpadDown  = document.getElementById('dpadDown');
   const dpadLeft  = document.getElementById('dpadLeft');
   const dpadRight = document.getElementById('dpadRight');
+  const finaleScreen = document.getElementById('finaleScreen');
+  const finaleTitleEl = document.getElementById('finaleTitle');
+  const finaleBodyEl  = document.getElementById('finaleBody');
+  const finaleReplayBtn = document.getElementById('finaleReplayBtn');
 
   const PAL = {
     skin:'#f6c9a0', hairD:'#6b3b23', outline:'#3a1530',
@@ -288,7 +355,7 @@
     L1_INTRO:'l1_intro', L1_MESSAGE:'l1_message', L1_LEVEL:'l1_level',
     L1_PHARMACY:'l1_pharmacy', L1_TEST:'l1_test', L1_COMPLETE:'l1_complete', L1_GAMEOVER:'l1_gameover',
     L2_INTRO:'l2_intro', L2_QUIZ:'l2_quiz', L2_OUTRO:'l2_outro', L2_COMPLETE:'l2_complete',
-    L3_MAP:'l3_map', L3_COMPLETE:'l3_complete'
+    L3_MAP:'l3_map', L3_COMPLETE:'l3_complete', FINALE:'finale'
   };
   let state = STATE.BOOT;
   let lastT = 0, clock = 0;
@@ -899,6 +966,15 @@
       drawHeart((i*53+20)%W, 20+(i*29)%60, 2, PAL.white);
       ctx.globalAlpha=1;
     }
+    // insegna del locale
+    px(52, 11, 96, 14, '#1c1024');
+    px(52, 11, 96, 2, PAL.dress);
+    px(52, 23, 96, 2, PAL.dress);
+    ctx.fillStyle = '#ff9dc4';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('TURNè', W/2, 21);
+    ctx.textAlign = 'left';
   }
 
   function drawTableScene(showGlassGirl, showGlassBoy){
@@ -1101,21 +1177,30 @@
   }
 
   // ============================================================
-  // LIVELLO 3 — vista dall'alto, bivio 1 (Marocco vs Roma)
+  // LIVELLO 3 — vista dall'alto, 14 bivi intorno al mondo
+  // Percorso solo orizzontale/verticale, continuo (nessun reset tra un bivio e l'altro)
   // ============================================================
   const FIXED_Y3 = H*0.74;
-  const FORK_START = 220, FORK_END = 300;
-  const RIGHT_BARRIER_Y = FORK_END + 110;
-  const LEFT_DEMO_END = FORK_END + 240;
-  const LEFT_ROAD_DRAW_END = FORK_END + 320;
+  const STRAIGHT_LEN = 150;   // tratto dritto (verticale) prima di ogni bivio
+  const BRANCH_LEN = 70;      // distanza dal bivio alla città (tratto orizzontale)
+  const WRONG_LEN = 45;       // quanto puoi inoltrarti sulla strada sbagliata prima della barriera
+  const SIGN_OFFSET = 22;     // il cartello è piazzato un po' prima della città
+  const EXIT_LEN = 140;       // tratto dritto dopo la città giusta, prima del prossimo bivio
+  const FINAL_EXTRA = 120;    // tratto extra dopo l'ultimo bivio, fino al cartello "NEXT STOP..."
 
-  let progress3 = 0, laneX3 = 0, branch3 = 'none';
+  let playerWX = 0, playerWY = 0;   // posizione assoluta di Francesca nel mondo
+  let forkAnchors = [ {x:0,y:0} ];   // punto di inizio (tratto dritto) di ciascun bivio, in ordine
+  let phase3 = 'approach';           // approach -> junction -> exit
   let l3Keys = { up:false, down:false, left:false, right:false };
   let l3BumpT = 0;
-  const L3_SPEED = 46;
+  let currentForkIdx = 0;
+  const L3_SPEED = 50;
 
   function resetL3(){
-    progress3 = 0; laneX3 = 0; branch3 = 'none'; l3BumpT = 0;
+    playerWX = 0; playerWY = 0;
+    forkAnchors = [ {x:0,y:0} ];
+    phase3 = 'approach';
+    l3BumpT = 0; currentForkIdx = 0;
     l3Keys = { up:false, down:false, left:false, right:false };
     setL3Hint('Usa le frecce per muoverti');
   }
@@ -1132,68 +1217,102 @@
   }
 
   function setL3Hint(text){ l3HintText.textContent = text; }
-
   function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+  function curFork(){ return FORKS[currentForkIdx]; }
 
-  function laneClampFor(progress, lane){
-    if(progress < FORK_START) return clamp(lane, -16, 16);
-    if(progress < FORK_END){
-      const t = (progress-FORK_START)/(FORK_END-FORK_START);
-      const range = 16 + t*(60-16);
-      return clamp(lane, -range, range);
-    }
-    if(lane < 0) return clamp(lane, -60, -28);
-    return clamp(lane, 28, 60);
+  // punti chiave del bivio "idx", sempre derivati dal suo punto di partenza fisso
+  function geometryForIdx(idx){
+    const anchor = forkAnchors[idx];
+    const fork = FORKS[idx];
+    const dir = fork.correct==='left' ? -1 : 1;
+    const fJ = { x: anchor.x, y: anchor.y - STRAIGHT_LEN };          // incrocio
+    const fCorrectEnd = { x: fJ.x + dir*BRANCH_LEN, y: fJ.y };       // città giusta
+    const fWrongEnd   = { x: fJ.x - dir*BRANCH_LEN, y: fJ.y };       // città sbagliata (visibile, irraggiungibile)
+    const fBarrier    = { x: fJ.x - dir*WRONG_LEN, y: fJ.y };        // barriera sulla strada sbagliata
+    const fSignCorrect= { x: fJ.x + dir*(BRANCH_LEN-SIGN_OFFSET), y: fJ.y };
+    const fSignWrong  = { x: fJ.x - dir*Math.min(WRONG_LEN-14, BRANCH_LEN-SIGN_OFFSET), y: fJ.y };
+    const fExitEnd    = { x: fCorrectEnd.x, y: fCorrectEnd.y - EXIT_LEN };
+    const fExitEndDecoy = { x: fWrongEnd.x, y: fWrongEnd.y - EXIT_LEN };
+    return { fork, dir, anchor, fJ, fCorrectEnd, fWrongEnd, fBarrier, fSignCorrect, fSignWrong, fExitEnd, fExitEndDecoy };
   }
 
   function updateL3(dt){
     if(l3BumpT>0) l3BumpT -= dt;
 
-    if(l3Keys.left)  laneX3 -= L3_SPEED*dt;
-    if(l3Keys.right) laneX3 += L3_SPEED*dt;
-    laneX3 = laneClampFor(progress3, laneX3);
+    let dx=0, dy=0;
+    if(l3Keys.left)  dx -= L3_SPEED*dt;
+    if(l3Keys.right) dx += L3_SPEED*dt;
+    if(l3Keys.up)    dy -= L3_SPEED*dt;
+    if(l3Keys.down)  dy += L3_SPEED*dt;
 
-    if(progress3 >= FORK_END){
-      branch3 = laneX3 < 0 ? 'left' : 'right';
-    } else if(progress3 < FORK_START){
-      branch3 = 'none';
-    }
+    const g = geometryForIdx(currentForkIdx);
+    const anchor = g.anchor;
 
-    let dProgress = 0;
-    if(l3Keys.up) dProgress += L3_SPEED*dt;
-    if(l3Keys.down) dProgress -= L3_SPEED*dt;
-
-    let next = progress3 + dProgress;
-    next = Math.max(0, next);
-
-    if(branch3 === 'right' && next > RIGHT_BARRIER_Y){
-      next = RIGHT_BARRIER_Y;
-      if(dProgress>0 && l3BumpT<=0){
-        setL3Hint('Vicolo cieco! Torna indietro e vai a sinistra 🇲🇦');
-        l3BumpT = 2.2;
+    if(phase3 === 'approach'){
+      playerWX = clamp(playerWX+dx, anchor.x-16, anchor.x+16);
+      playerWY = Math.min(playerWY+dy, anchor.y);
+      if(anchor.y - playerWY >= STRAIGHT_LEN){
+        playerWY = g.fJ.y;
+        phase3 = 'junction';
       }
-    }
-    if(branch3 === 'left' && next > LEFT_ROAD_DRAW_END) next = LEFT_ROAD_DRAW_END;
+      setL3Hint(currentForkIdx===0 && anchor.y-playerWY < 10 ? 'Usa le frecce per muoverti' : 'Prosegui dritto...');
 
-    progress3 = next;
+    } else if(phase3 === 'junction'){
+      playerWY = g.fJ.y;
+      playerWX = clamp(playerWX+dx, g.fJ.x-(BRANCH_LEN+15), g.fJ.x+(BRANCH_LEN+15));
+      const rel = playerWX - g.fJ.x;
+      const side = rel < 0 ? 'left' : 'right';
+      const isCorrect = Math.abs(rel) > 2 && side === g.fork.correct;
+      const isWrong = Math.abs(rel) > 2 && side !== g.fork.correct;
 
-    if(l3BumpT<=0){
-      if(progress3 < FORK_START) setL3Hint('Usa le frecce per muoverti');
-      else if(progress3 < FORK_END) setL3Hint('Bivio! Scegli una direzione');
-      else if(branch3==='right') setL3Hint('Sei sulla strada per Roma...');
-      else if(branch3==='left') setL3Hint('Sei sulla strada per il Marocco!');
-    }
+      if(isWrong && Math.abs(rel) > WRONG_LEN){
+        playerWX = g.fJ.x + (rel<0?-1:1)*WRONG_LEN;
+        if(dx!==0 && l3BumpT<=0){
+          setL3Hint('Vicolo cieco! Torna indietro e vai verso ' + LOCATIONS[g.fork[g.fork.correct]].name);
+          l3BumpT = 2.4;
+        }
+      }
+      if(isCorrect && Math.abs(rel) >= BRANCH_LEN){
+        playerWX = g.fJ.x + g.dir*BRANCH_LEN;
+        if(l3Keys.up){
+          phase3 = 'exit';
+        }
+      }
 
-    if(branch3==='left' && progress3 >= LEFT_DEMO_END){
-      state = STATE.L3_COMPLETE;
-      dpad.style.display = 'none';
-      l3Hint.style.display = 'none';
-      showOverlay('Bivio superato! 🎉', 'Hai imboccato la strada giusta verso il Marocco. Il prossimo bivio arriverà quando mi darai i dettagli.', 'Rigioca il bivio', ()=>{ goToL3Intro(); }, 'Rigioca dall\'inizio', restartWholeGame);
+      if(l3BumpT<=0){
+        if(Math.abs(rel) <= 2) setL3Hint('Bivio! Scegli una direzione');
+        else if(isCorrect && Math.abs(rel)>=BRANCH_LEN) setL3Hint('Sei arrivata! Premi ▲ per continuare');
+        else if(isCorrect) setL3Hint('Stai andando verso ' + LOCATIONS[g.fork[side]].name + '!');
+        else setL3Hint('Sei sicura? Questa non sembra la strada giusta...');
+      }
+
+    } else if(phase3 === 'exit'){
+      playerWX = clamp(playerWX+dx, g.fCorrectEnd.x-16, g.fCorrectEnd.x+16);
+      playerWY += dy;
+      if(playerWY >= g.fJ.y){
+        playerWY = g.fJ.y;
+        phase3 = 'junction';
+      } else {
+        const localExit = g.fJ.y - playerWY;
+        if(currentForkIdx >= FORKS.length-1){
+          setL3Hint(localExit >= EXIT_LEN ? 'Ultimo tratto...' : 'Prosegui dritto...');
+          if(localExit >= EXIT_LEN + FINAL_EXTRA){
+            goToFinale();
+          }
+        } else {
+          setL3Hint('Prosegui dritto...');
+          if(localExit >= EXIT_LEN){
+            forkAnchors.push({ x: playerWX, y: playerWY });
+            currentForkIdx++;
+            phase3 = 'approach';
+          }
+        }
+      }
     }
   }
 
   function screenPt3(wx, wy){
-    return { x: W/2 + wx, y: FIXED_Y3 + (progress3 - wy) };
+    return { x: W/2 + (wx-playerWX), y: FIXED_Y3 + (wy-playerWY) };
   }
 
   function drawQuad3(corners, color){
@@ -1222,91 +1341,492 @@
     ctx.fill();
   }
 
-  function drawFlagMA(wx, wy){
-    const p = screenPt3(wx, wy);
-    const poleH = 24, fw = 26, fh = 17;
-    px(p.x-1, p.y-poleH, 2, poleH, '#8a8a8a');
-    px(p.x, p.y-poleH, fw, fh, '#c1272d');
-    px(p.x, p.y-poleH, fw, 1, '#8a1a1e');
-    px(p.x, p.y-poleH+fh-1, fw, 1, '#8a1a1e');
-    fillStar(p.x+fw/2, p.y-poleH+fh/2, 6.2, 2.6, 5, '#006233');
+  function triUp(cx, topY, baseW, h, color){
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(cx, topY); ctx.lineTo(cx-baseW/2, topY+h); ctx.lineTo(cx+baseW/2, topY+h);
+    ctx.closePath(); ctx.fill();
+  }
+  function domeTop(cx, cy, r, color){
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0); ctx.closePath(); ctx.fill();
+  }
+  function circleShape(cx, cy, r, color){
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
   }
 
-  function drawFlagIT(wx, wy){
+  // ---------------- FLAGS (generico) ----------------
+  function flagBase(wx,wy){
     const p = screenPt3(wx, wy);
-    const poleH = 24, fw = 27, fh = 17, stripe = fw/3;
+    const poleH=24, fw=27, fh=17;
     px(p.x-1, p.y-poleH, 2, poleH, '#8a8a8a');
-    px(p.x, p.y-poleH, stripe, fh, '#008C45');
-    px(p.x+stripe, p.y-poleH, stripe, fh, '#f4f5f0');
-    px(p.x+stripe*2, p.y-poleH, stripe, fh, '#CD212A');
+    return { fx:p.x, fy:p.y-poleH, fw, fh };
+  }
+  function flagVStripes(wx,wy,colors){
+    const {fx,fy,fw,fh} = flagBase(wx,wy);
+    const sw = fw/colors.length;
+    colors.forEach((c,i)=> px(fx+i*sw, fy, Math.ceil(sw), fh, c));
+  }
+  function flagHStripes(wx,wy,colors){
+    const {fx,fy,fw,fh} = flagBase(wx,wy);
+    const sh = fh/colors.length;
+    colors.forEach((c,i)=> px(fx, fy+i*sh, fw, Math.ceil(sh), c));
+  }
+  function flagStar(wx,wy,bg,star,corner){
+    const {fx,fy,fw,fh} = flagBase(wx,wy);
+    px(fx,fy,fw,fh,bg);
+    const cx = corner? fx+fw*0.28 : fx+fw/2;
+    fillStar(cx, fy+fh/2, 6.2, 2.6, 5, star);
+  }
+  function flagCircle(wx,wy,bg,circ){
+    const {fx,fy,fw,fh} = flagBase(wx,wy);
+    px(fx,fy,fw,fh,bg);
+    circleShape(fx+fw/2, fy+fh/2, fh*0.32, circ);
+  }
+  function flagCrescentStar(wx,wy,bg,fg){
+    const {fx,fy,fw,fh} = flagBase(wx,wy);
+    px(fx,fy,fw,fh,bg);
+    circleShape(fx+fw*0.42, fy+fh/2, fh*0.32, fg);
+    circleShape(fx+fw*0.49, fy+fh/2, fh*0.26, bg);
+    fillStar(fx+fw*0.66, fy+fh/2, 3.4, 1.5, 5, fg);
+  }
+  function flagDiamond(wx,wy,bg,dia,circ){
+    const {fx,fy,fw,fh} = flagBase(wx,wy);
+    px(fx,fy,fw,fh,bg);
+    ctx.fillStyle = dia;
+    ctx.beginPath();
+    ctx.moveTo(fx+fw/2, fy+1); ctx.lineTo(fx+fw-2, fy+fh/2); ctx.lineTo(fx+fw/2, fy+fh-1); ctx.lineTo(fx+2, fy+fh/2);
+    ctx.closePath(); ctx.fill();
+    if(circ) circleShape(fx+fw/2, fy+fh/2, fh*0.17, circ);
+  }
+  function flagCross(wx,wy,bg,cross){
+    const {fx,fy,fw,fh} = flagBase(wx,wy);
+    px(fx,fy,fw,fh,bg);
+    px(fx+fw*0.30, fy, fw*0.18, fh, cross);
+    px(fx, fy+fh*0.40, fw, fh*0.20, cross);
+  }
+  function flagCanton(wx,wy,base,cantonColor,onCanton){
+    const {fx,fy,fw,fh} = flagBase(wx,wy);
+    base(wx,wy);
+    px(fx,fy,fw*0.4,fh*0.5, cantonColor);
+    if(onCanton) onCanton(fx,fy,fw*0.4,fh*0.5);
+  }
+  function drawFlagMA(wx,wy){
+    const {fx,fy,fw,fh} = flagBase(wx,wy);
+    px(fx,fy,fw,fh,'#c1272d');
+    px(fx,fy,fw,1,'#8a1a1e'); px(fx,fy+fh-1,fw,1,'#8a1a1e');
+    fillStar(fx+fw/2, fy+fh/2, 6.2, 2.6, 5, '#006233');
+  }
+  function drawFlagIT(wx,wy){ flagVStripes(wx,wy,['#008C45','#f4f5f0','#CD212A']); }
+  function drawFlagEG(wx,wy){ flagHStripes(wx,wy,['#c1272d','#ffffff','#000000']); }
+  function drawFlagBR(wx,wy){ flagDiamond(wx,wy,'#009739','#FEDD00','#012169'); }
+  function drawFlagES(wx,wy){ flagHStripes(wx,wy,['#AA151B','#F1BF00','#AA151B']); }
+  function drawFlagDE(wx,wy){ flagHStripes(wx,wy,['#000000','#DD0000','#FFCE00']); }
+  function drawFlagFR(wx,wy){ flagVStripes(wx,wy,['#0055A4','#FFFFFF','#EF4135']); }
+  function drawFlagMT(wx,wy){ flagVStripes(wx,wy,['#ffffff','#c1272d']); }
+  function drawFlagTR(wx,wy){ flagCrescentStar(wx,wy,'#c1272d','#ffffff'); }
+  function drawFlagAE(wx,wy){
+    const {fx,fy,fw,fh} = flagBase(wx,wy);
+    px(fx,fy,fw*0.28,fh,'#c1272d');
+    const sx = fx+fw*0.28, sw = fw*0.72, sh = fh/3;
+    px(sx, fy, sw, sh, '#00732F');
+    px(sx, fy+sh, sw, sh, '#ffffff');
+    px(sx, fy+sh*2, sw, sh, '#000000');
+  }
+  function drawFlagMV(wx,wy){
+    const {fx,fy,fw,fh} = flagBase(wx,wy);
+    px(fx,fy,fw,fh,'#c1272d');
+    px(fx+fw*0.16,fy+fh*0.14,fw*0.68,fh*0.72,'#007e3a');
+    circleShape(fx+fw*0.52, fy+fh/2, fh*0.24, '#ffffff');
+    circleShape(fx+fw*0.60, fy+fh/2, fh*0.20, '#007e3a');
+  }
+  function drawFlagTZ(wx,wy){ flagHStripes(wx,wy,['#1EB53A','#000000','#00A3DD']); }
+  function drawFlagCA(wx,wy){
+    flagVStripes(wx,wy,['#FF0000','#ffffff','#FF0000']);
+    const {fx,fy,fw,fh} = flagBase(wx,wy);
+    triUp(fx+fw/2, fy+fh*0.28, 7, 7, '#FF0000');
+  }
+  function drawFlagPL(wx,wy){ flagHStripes(wx,wy,['#ffffff','#DC143C']); }
+  function drawFlagUS(wx,wy){
+    const {fx,fy,fw,fh} = flagBase(wx,wy);
+    for(let i=0;i<4;i++) px(fx, fy+i*(fh/4), fw, fh/4, i%2===0?'#B22234':'#ffffff');
+    px(fx,fy,fw*0.42,fh*0.55,'#3C3B6E');
+  }
+  function drawFlagCN(wx,wy){
+    const {fx,fy,fw,fh} = flagBase(wx,wy);
+    px(fx,fy,fw,fh,'#DE2910');
+    fillStar(fx+fw*0.22, fy+fh*0.3, 3.6, 1.5, 5, '#FFDE00');
+  }
+  function drawFlagJP(wx,wy){ flagCircle(wx,wy,'#ffffff','#BC002D'); }
+  function drawFlagMY(wx,wy){
+    const {fx,fy,fw,fh} = flagBase(wx,wy);
+    for(let i=0;i<4;i++) px(fx, fy+i*(fh/4), fw, fh/4, i%2===0?'#CC0001':'#ffffff');
+    px(fx,fy,fw*0.4,fh*0.5,'#010066');
+    fillStar(fx+fw*0.2, fy+fh*0.25, 2.6, 1.1, 5, '#FFCC00');
+  }
+  function drawFlagPT(wx,wy){ flagVStripes(wx,wy,['#046A38','#DA291C']); }
+  function drawFlagGB(wx,wy){
+    const {fx,fy,fw,fh} = flagBase(wx,wy);
+    px(fx,fy,fw,fh,'#00247D');
+    px(fx,fy+fh*0.42,fw,fh*0.16,'#ffffff');
+    px(fx+fw*0.42,fy,fw*0.16,fh,'#ffffff');
+    px(fx,fy+fh*0.45,fw,fh*0.10,'#CF142B');
+    px(fx+fw*0.45,fy,fw*0.10,fh,'#CF142B');
+  }
+  function drawFlagFI(wx,wy){ flagCross(wx,wy,'#ffffff','#003580'); }
+  function drawFlagTH(wx,wy){ flagHStripes(wx,wy,['#A51931','#ffffff','#2D2A4A','#ffffff','#A51931']); }
+  function drawFlagGR(wx,wy){
+    const {fx,fy,fw,fh} = flagBase(wx,wy);
+    for(let i=0;i<4;i++) px(fx, fy+i*(fh/4), fw, fh/4, i%2===0?'#0D5EAF':'#ffffff');
+    px(fx,fy,fw*0.32,fh*0.5,'#0D5EAF');
+    px(fx+fw*0.13,fy,fw*0.06,fh*0.5,'#ffffff');
+    px(fx,fy+fh*0.22,fw*0.32,fh*0.08,'#ffffff');
   }
 
-  function drawMoroccoScene(){
-    const wx=-45, wy=FORK_END+55;
-    const p = screenPt3(wx, wy);
-    px(p.x-26, p.y-6, 52, 20, '#e8c27a');
-    // minaret
+  // ---------------- ICONE MONUMENTI ----------------
+  function iconMosque(p){
     px(p.x-4, p.y-40, 8, 34, '#f2e0b8');
     px(p.x-5, p.y-44, 10, 5, '#d9b56a');
     px(p.x-1, p.y-49, 2, 5, '#d9b56a');
-    // stalls
     px(p.x-22, p.y-10, 12, 10, '#e8c27a');
-    ctx.fillStyle = '#c1272d';
-    ctx.beginPath();
-    ctx.moveTo(p.x-24, p.y-10); ctx.lineTo(p.x-16, p.y-20); ctx.lineTo(p.x-8, p.y-10);
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#2f9e57';
-    ctx.beginPath();
-    ctx.moveTo(p.x+8, p.y-8); ctx.lineTo(p.x+16, p.y-18); ctx.lineTo(p.x+24, p.y-8);
-    ctx.closePath(); ctx.fill();
-    drawFlagMA(wx-4, FORK_END+22);
+    triUp(p.x-16, p.y-20, 10, 10, '#c1272d');
+    triUp(p.x+16, p.y-18, 12, 10, '#2f9e57');
   }
-
-  function drawRomeScene(){
-    const wx=45, wy=FORK_END+55;
-    const p = screenPt3(wx, wy);
+  function iconColosseum(p){
     px(p.x-26, p.y-24, 52, 26, '#d8c39a');
     px(p.x-28, p.y+0, 56, 6, '#c2ab7c');
-    for(let i=0;i<6;i++){
-      px(p.x-24+i*9, p.y-20, 5, 16, '#a8916a');
-    }
+    for(let i=0;i<6;i++) px(p.x-24+i*9, p.y-20, 5, 16, '#a8916a');
     px(p.x-26, p.y-30, 52, 8, '#e2cfa2');
-    drawFlagIT(wx-4, FORK_END+22);
+  }
+  function iconCoral(p){
+    px(p.x-26, p.y-14, 52, 24, '#3aa0d1');
+    triUp(p.x-16, p.y-2, 8, 10, '#ff8a4c');
+    triUp(p.x-6, p.y-4, 6, 8, '#ff5c9a');
+    triUp(p.x+8, p.y-2, 8, 10, '#ffb84c');
+    ctx.fillStyle='#fff5f9';
+    ctx.beginPath(); ctx.moveTo(p.x+16,p.y-10); ctx.lineTo(p.x+24,p.y-7); ctx.lineTo(p.x+16,p.y-4); ctx.closePath(); ctx.fill();
+  }
+  function iconStatueOpenArms(p, tall){
+    const base = tall? 14:6;
+    px(p.x-2, p.y-base-26, 4, 26, '#e8e4de');
+    px(p.x-12, p.y-base-24, 24, 3, '#e8e4de');
+    px(p.x-3, p.y-base-30, 6, 5, '#e8e4de');
+    if(tall) px(p.x-6, p.y-14, 12, 14, '#c9c3ba');
+    px(p.x-16, p.y-8, 32, 8, '#7aa858');
+  }
+  function iconPlazaEspana(p){
+    domeTop(p.x, p.y-14, 24, '#e2b98f');
+    px(p.x-24, p.y-14, 48, 12, '#d8a877');
+    px(p.x-3, p.y-34, 6, 22, '#c98a55');
+    px(p.x-4, p.y-6, 8, 6, '#3aa0d1');
+  }
+  function iconOnionTowers(p){
+    px(p.x-16, p.y-26, 8, 22, '#c98a55');
+    px(p.x+8, p.y-26, 8, 22, '#c98a55');
+    domeTop(p.x-12, p.y-26, 6, '#2f6e4f');
+    domeTop(p.x+12, p.y-26, 6, '#2f6e4f');
+    circleShape(p.x-12, p.y-34, 2, '#2f6e4f');
+    circleShape(p.x+12, p.y-34, 2, '#2f6e4f');
+  }
+  function iconCanalHouses(p, palette){
+    palette = palette || ['#ff9dc4','#8fd7ff','#ffe08a'];
+    px(p.x-24, p.y-4, 52, 4, '#5fb8ea');
+    palette.forEach((c,i)=>{
+      const hx = p.x-22+i*17;
+      px(hx, p.y-22, 14, 18, c);
+      triUp(hx+7, p.y-30, 16, 8, '#8a5a3c');
+    });
+  }
+  function iconSpires(p, n, color){
+    for(let i=0;i<n;i++){
+      const h = 20+ (i%2===0?10:0);
+      px(p.x-14+i*10, p.y-h, 6, h, color||'#d8c39a');
+      domeTop(p.x-11+i*10, p.y-h, 3, color||'#d8c39a');
+    }
+  }
+  function iconIslandSun(p, sunColor){
+    px(p.x-26, p.y-6, 52, 10, '#3aa0d1');
+    px(p.x-14, p.y-8, 28, 8, '#e2c68f');
+    circleShape(p.x+14, p.y-28, 8, sunColor||'#ffb84c');
+    px(p.x-4, p.y-24, 3, 16, '#5a7a3c');
+    triUp(p.x-2, p.y-28, 12, 8, '#3f8f4c');
+  }
+  function iconIslandDome(p){
+    px(p.x-20, p.y-6, 40, 10, '#e2c68f');
+    px(p.x-8, p.y-18, 16, 12, '#f2e0b8');
+    domeTop(p.x, p.y-18, 8, '#c98a55');
+    px(p.x-30, p.y-4, 60, 8, '#3aa0d1');
+  }
+  function iconMinaretDome(p){
+    domeTop(p.x, p.y-24, 12, '#d9b56a');
+    px(p.x-14, p.y-12, 28, 12, '#f2e0b8');
+    px(p.x-22, p.y-30, 6, 18, '#f2e0b8');
+    px(p.x+16, p.y-30, 6, 18, '#f2e0b8');
+  }
+  function iconBurj(p){
+    px(p.x-3, p.y-46, 6, 46, '#cfe8f2');
+    px(p.x-6, p.y-30, 12, 30, '#bcdcea');
+    px(p.x-9, p.y-14, 18, 14, '#a9cfe0');
+    px(p.x-1, p.y-54, 2, 8, '#8a8a8a');
+  }
+  function iconRaysSharks(p){
+    px(p.x-26, p.y-16, 52, 26, '#2a8fc9');
+    ctx.fillStyle = '#5fb8ea';
+    ctx.beginPath();
+    ctx.moveTo(p.x-14,p.y-6); ctx.lineTo(p.x-4,p.y-12); ctx.lineTo(p.x+6,p.y-6); ctx.lineTo(p.x-4,p.y-2);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#22608a';
+    ctx.beginPath();
+    ctx.moveTo(p.x+10,p.y-14); ctx.lineTo(p.x+22,p.y-10); ctx.lineTo(p.x+10,p.y-8); ctx.closePath(); ctx.fill();
+    triUp(p.x+13, p.y-16, 4, 4, '#22608a');
+  }
+  function iconDhow(p){
+    px(p.x-26, p.y-4, 52, 8, '#2a8fc9');
+    px(p.x-4, p.y-6, 16, 4, '#8a5a3c');
+    ctx.fillStyle = '#fff5f9';
+    ctx.beginPath(); ctx.moveTo(p.x-2,p.y-6); ctx.lineTo(p.x-2,p.y-26); ctx.lineTo(p.x+14,p.y-6); ctx.closePath(); ctx.fill();
+    px(p.x+10, p.y-16, 3, 12, '#3f8f4c');
+  }
+  function iconTallTowerPod(p){
+    px(p.x-3, p.y-48, 6, 48, '#c9c3ba');
+    px(p.x-8, p.y-30, 16, 8, '#a9a39a');
+    px(p.x-1, p.y-56, 2, 8, '#8a8a8a');
+  }
+  function iconPyramids(p){
+    triUp(p.x-10, p.y-24, 26, 24, '#e2b98f');
+    triUp(p.x+14, p.y-16, 18, 16, '#d8a877');
+    circleShape(p.x+20, p.y-34, 6, '#ffd98a');
+  }
+  function iconTwoTowers(p, c1, c2){
+    px(p.x-18, p.y-30, 14, 30, c1||'#c98a55');
+    px(p.x+4, p.y-40, 14, 40, c2||'#a8916a');
+    for(let i=0;i<3;i++){ px(p.x-15,p.y-26+i*8,3,3,'#fff5f9'); px(p.x+7,p.y-36+i*10,3,3,'#fff5f9'); }
+  }
+  function iconArch(p){
+    px(p.x-16, p.y-26, 6, 26, '#d8c39a');
+    px(p.x+10, p.y-26, 6, 26, '#d8c39a');
+    px(p.x-16, p.y-30, 32, 6, '#d8c39a');
+    px(p.x-8, p.y-24, 16, 24, '#8fbf6a');
+  }
+  function iconEmpireState(p){
+    px(p.x-10, p.y-30, 20, 30, '#c9c3ba');
+    px(p.x-6, p.y-42, 12, 12, '#b0aaa1');
+    px(p.x-2, p.y-52, 4, 10, '#8a8a8a');
+    px(p.x-1, p.y-56, 2, 4, '#e0417f');
+    // statua della libertà
+    px(p.x+16, p.y-4, 6, 4, '#7aab8f');
+    px(p.x+15, p.y-16, 8, 12, '#8fc4a8');
+    circleShape(p.x+19, p.y-19, 3, '#8fc4a8');
+    px(p.x+21, p.y-26, 2, 8, '#8fc4a8');
+    triUp(p.x+22, p.y-30, 5, 5, '#ffd98a');
+  }
+  function iconTieredRoundTemple(p){
+    px(p.x-18, p.y-6, 36, 8, '#c98a55');
+    px(p.x-14, p.y-16, 28, 10, '#3aa0d1');
+    px(p.x-9, p.y-24, 18, 8, '#3aa0d1');
+    circleShape(p.x, p.y-28, 3, '#ffd98a');
+  }
+  function iconLatticeTower(p){
+    px(p.x-2, p.y-46, 4, 46, '#e0417f');
+    ctx.strokeStyle='#e0417f'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(p.x-10,p.y); ctx.lineTo(p.x,p.y-46); ctx.lineTo(p.x+10,p.y); ctx.stroke();
+    px(p.x-1, p.y-50, 2, 6, '#8a8a8a');
+  }
+  function iconPetronas(p){
+    px(p.x-14, p.y-36, 9, 36, '#d8e8f2');
+    px(p.x+5, p.y-36, 9, 36, '#d8e8f2');
+    px(p.x-11, p.y-42, 3, 6, '#c9c3ba'); px(p.x+8, p.y-42, 3, 6, '#c9c3ba');
+    px(p.x-8, p.y-24, 16, 2, '#bcdcea');
+  }
+  function iconBigBen(p){
+    px(p.x-6, p.y-38, 12, 38, '#c98a55');
+    px(p.x-8, p.y-42, 16, 6, '#a8763f');
+    circleShape(p.x, p.y-30, 4, '#fff5f9');
+  }
+  function iconCathedralDome(p){
+    px(p.x-16, p.y-16, 32, 16, '#f2eee6');
+    domeTop(p.x, p.y-16, 12, '#3f8f4c');
+    px(p.x-1, p.y-30, 2, 4, '#3f8f4c');
+    px(p.x-22, p.y-8, 4, 8, '#f2eee6'); px(p.x+18, p.y-8, 4, 8, '#f2eee6');
+  }
+  function iconWatArun(p){
+    for(let i=0;i<3;i++){
+      const h=18+i*0;
+      const w=10-i*2;
+    }
+    px(p.x-3, p.y-34, 6, 34, '#e8c27a');
+    px(p.x-8, p.y-20, 16, 8, '#d9b56a');
+    px(p.x-14, p.y-8, 28, 8, '#c98a55');
+    circleShape(p.x, p.y-38, 2, '#ffd98a');
+    px(p.x-16, p.y-6, 8, 12, '#e8c27a');
+    px(p.x+8, p.y-6, 8, 12, '#e8c27a');
+  }
+  function iconSantoriniDomes(p){
+    px(p.x-26, p.y-4, 52, 10, '#2a8fc9');
+    for(let i=0;i<3;i++){
+      const hx = p.x-18+i*16;
+      px(hx, p.y-14, 12, 10, '#f2f2f2');
+      domeTop(hx+6, p.y-14, 6, '#3a6fd8');
+    }
   }
 
-  function drawBarrier3(){
-    const y0 = RIGHT_BARRIER_Y-5, y1 = RIGHT_BARRIER_Y+2;
+  // ---------------- LOCATIONS ----------------
+  const LOCATIONS = {
+    marrakech:{ name:'Marrakech', icon:iconMosque, flag:drawFlagMA },
+    roma:{ name:'Roma', icon:iconColosseum, flag:drawFlagIT },
+    sharm:{ name:'Sharm El Sheikh', icon:iconCoral, flag:drawFlagEG },
+    rio:{ name:'Rio de Janeiro', icon:(p)=>iconStatueOpenArms(p,false), flag:drawFlagBR },
+    siviglia:{ name:'Siviglia', icon:iconPlazaEspana, flag:drawFlagES },
+    monaco_baviera:{ name:'Monaco di Baviera', icon:iconOnionTowers, flag:drawFlagDE },
+    colmar:{ name:'Colmar', icon:(p)=>iconCanalHouses(p,['#ff9dc4','#8fd7ff','#ffe08a']), flag:drawFlagFR },
+    barcellona:{ name:'Barcellona', icon:(p)=>iconSpires(p,4,'#e2b98f'), flag:drawFlagES },
+    ibiza:{ name:'Ibiza', icon:(p)=>iconIslandSun(p,'#ffb84c'), flag:drawFlagES },
+    malta:{ name:'Malta', icon:iconIslandDome, flag:drawFlagMT },
+    istanbul:{ name:'Istanbul', icon:iconMinaretDome, flag:drawFlagTR },
+    dubai:{ name:'Dubai', icon:iconBurj, flag:drawFlagAE },
+    maldive:{ name:'Maldive', icon:iconRaysSharks, flag:drawFlagMV },
+    zanzibar:{ name:'Zanzibar', icon:iconDhow, flag:drawFlagTZ },
+    toronto:{ name:'Toronto', icon:iconTallTowerPod, flag:drawFlagCA },
+    cairo:{ name:'Il Cairo', icon:iconPyramids, flag:drawFlagEG },
+    varsavia:{ name:'Varsavia', icon:(p)=>iconTwoTowers(p,'#c98a55','#a8916a'), flag:drawFlagPL },
+    madrid:{ name:'Madrid', icon:iconArch, flag:drawFlagES },
+    newyork:{ name:'New York', icon:iconEmpireState, flag:drawFlagUS },
+    pechino:{ name:'Pechino', icon:iconTieredRoundTemple, flag:drawFlagCN },
+    tokyo:{ name:'Tokyo', icon:iconLatticeTower, flag:drawFlagJP },
+    kualalumpur:{ name:'Kuala Lumpur', icon:iconPetronas, flag:drawFlagMY },
+    lisbona:{ name:'Lisbona', icon:(p)=>iconStatueOpenArms(p,true), flag:drawFlagPT },
+    londra:{ name:'Londra', icon:iconBigBen, flag:drawFlagGB },
+    helsinki:{ name:'Helsinki', icon:iconCathedralDome, flag:drawFlagFI },
+    danzica:{ name:'Danzica', icon:(p)=>iconCanalHouses(p,['#e0417f','#f2e0b8','#8fbf6a']), flag:drawFlagPL },
+    bangkok:{ name:'Bangkok', icon:iconWatArun, flag:drawFlagTH },
+    santorini:{ name:'Santorini', icon:iconSantoriniDomes, flag:drawFlagGR }
+  };
+
+  // ---------------- BIVI (14) ----------------
+  const FORKS = [
+    { left:'marrakech',   right:'roma',         correct:'left'  },
+    { left:'sharm',       right:'rio',          correct:'left'  },
+    { left:'siviglia',    right:'monaco_baviera', correct:'left'},
+    { left:'colmar',      right:'barcellona',   correct:'left'  },
+    { left:'ibiza',       right:'malta',        correct:'right' },
+    { left:'istanbul',    right:'dubai',        correct:'right' },
+    { left:'maldive',     right:'zanzibar',     correct:'left'  },
+    { left:'toronto',     right:'cairo',        correct:'right' },
+    { left:'varsavia',    right:'madrid',       correct:'left'  },
+    { left:'newyork',     right:'pechino',      correct:'left'  },
+    { left:'tokyo',       right:'kualalumpur',  correct:'right' },
+    { left:'lisbona',     right:'londra',       correct:'left'  },
+    { left:'helsinki',    right:'danzica',      correct:'right' },
+    { left:'bangkok',     right:'santorini',    correct:'left'  }
+  ];
+
+  function drawRoadSign(wx, wy, text){
+    const p = screenPt3(wx, wy);
+    px(p.x-1, p.y-2, 2, 16, '#8a7a5a');
+    const bw = Math.max(30, text.length*4.6), bh = 12;
+    px(p.x-bw/2, p.y-16, bw, bh, '#fff5f9');
+    px(p.x-bw/2, p.y-16, bw, 2, PAL.dress);
+    ctx.fillStyle = PAL.outline;
+    ctx.font = 'bold 7px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(text, p.x, p.y-7);
+    ctx.textAlign = 'left';
+  }
+
+  function drawBigSign(wx, wy, text){
+    const p = screenPt3(wx, wy);
+    px(p.x-2, p.y-4, 4, 34, '#8a7a5a');
+    const bw = 120, bh = 30;
+    px(p.x-bw/2, p.y-40, bw, bh, '#3a1530');
+    px(p.x-bw/2+3, p.y-37, bw-6, bh-6, '#fff5f9');
+    ctx.fillStyle = '#c1272d';
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(text, p.x, p.y-20);
+    ctx.textAlign = 'left';
+  }
+
+  function drawLocationScene(anchor, id){
+    const p = screenPt3(anchor.x, anchor.y);
+    const loc = LOCATIONS[id];
+    px(p.x-26, p.y-6, 52, 20, '#e8c27a');
+    loc.icon(p);
+    loc.flag(anchor.x-4, anchor.y+30);
+  }
+
+  function drawBarrier3(g){
+    const p0 = screenPt3(g.fBarrier.x, g.fBarrier.y-8);
     for(let i=0;i<3;i++){
-      drawQuad3([[30+i*10,y0],[38+i*10,y0],[38+i*10,y1],[30+i*10,y1]], i%2===0?'#e0417f':'#fff5f9');
+      px(p0.x-4, p0.y+i*6, 8, 6, i%2===0?'#e0417f':'#fff5f9');
     }
+  }
+
+  function drawForkScene(g){
+    const ROAD_W = 18; // metà larghezza strada
+
+    // tratto dritto (verticale) in ingresso al bivio
+    drawQuad3([[g.anchor.x-ROAD_W,g.anchor.y+40],[g.anchor.x+ROAD_W,g.anchor.y+40],[g.anchor.x+ROAD_W,g.fJ.y],[g.anchor.x-ROAD_W,g.fJ.y]], '#8a7a86');
+    // incrocio + tratto orizzontale verso entrambe le città (solo orizzontale, niente diagonali)
+    drawQuad3([
+      [Math.min(g.fWrongEnd.x,g.fCorrectEnd.x)-ROAD_W, g.fJ.y-ROAD_W],
+      [Math.max(g.fWrongEnd.x,g.fCorrectEnd.x)+ROAD_W, g.fJ.y-ROAD_W],
+      [Math.max(g.fWrongEnd.x,g.fCorrectEnd.x)+ROAD_W, g.fJ.y+ROAD_W],
+      [Math.min(g.fWrongEnd.x,g.fCorrectEnd.x)-ROAD_W, g.fJ.y+ROAD_W]
+    ], '#8a7a86');
+    // tratto dritto dopo la città giusta, verso il prossimo bivio (percorribile)
+    drawQuad3([[g.fCorrectEnd.x-ROAD_W,g.fJ.y],[g.fCorrectEnd.x+ROAD_W,g.fJ.y],[g.fCorrectEnd.x+ROAD_W,g.fExitEnd.y],[g.fCorrectEnd.x-ROAD_W,g.fExitEnd.y]], '#8a7a86');
+    // stesso tratto anche sul lato sbagliato, solo scenografico: le due strade devono sembrare identiche
+    drawQuad3([[g.fWrongEnd.x-ROAD_W,g.fJ.y],[g.fWrongEnd.x+ROAD_W,g.fJ.y],[g.fWrongEnd.x+ROAD_W,g.fExitEndDecoy.y],[g.fWrongEnd.x-ROAD_W,g.fExitEndDecoy.y]], '#8a7a86');
+
+    drawLocationScene(g.fCorrectEnd, g.fork[g.fork.correct]);
+    const wrongSide = g.fork.correct==='left' ? 'right' : 'left';
+    drawLocationScene(g.fWrongEnd, g.fork[wrongSide]);
+    drawRoadSign(g.fSignCorrect.x, g.fSignCorrect.y, LOCATIONS[g.fork[g.fork.correct]].name);
+    drawRoadSign(g.fSignWrong.x, g.fSignWrong.y, LOCATIONS[g.fork[wrongSide]].name);
+    drawBarrier3(g);
   }
 
   function drawL3(){
     px(0,0,W,H, '#8fbf6a');
-    for(let i=0;i<10;i++){
-      const wy = ((i*67) % 900) ;
-      const p = screenPt3(-90+((i*53)%180), wy);
+    for(let i=0;i<12;i++){
+      const wx = playerWX + ((i*53)%200-100);
+      const wy = playerWY + ((i*67)%260-40);
+      const p = screenPt3(wx, wy);
       px(p.x, p.y, 3, 3, '#7aa858');
     }
 
-    drawQuad3([[-18,-40],[18,-40],[18,FORK_START],[-18,FORK_START]], '#8a7a86');
-    drawQuad3([[-18,FORK_START],[0,FORK_START],[-30,FORK_END],[-60,FORK_END]], '#8a7a86');
-    drawQuad3([[0,FORK_START],[18,FORK_START],[60,FORK_END],[30,FORK_END]], '#8a7a86');
-    drawQuad3([[-60,FORK_END],[-30,FORK_END],[-30,LEFT_ROAD_DRAW_END],[-60,LEFT_ROAD_DRAW_END]], '#8a7a86');
-    drawQuad3([[30,FORK_END],[60,FORK_END],[60,RIGHT_BARRIER_Y],[30,RIGHT_BARRIER_Y]], '#8a7a86');
+    // disegna anche il bivio precedente: così il percorso resta visibile e continuo,
+    // senza sparire di colpo quando si passa a quello nuovo
+    if(currentForkIdx > 0) drawForkScene(geometryForIdx(currentForkIdx-1));
+    drawForkScene(geometryForIdx(currentForkIdx));
 
-    drawMoroccoScene();
-    drawRomeScene();
-    drawBarrier3();
+    // dopo l'ultimo bivio, il tratto finale con il cartello "NEXT STOP..."
+    if(currentForkIdx === FORKS.length-1){
+      const g = geometryForIdx(currentForkIdx);
+      const ROAD_W = 18;
+      const farY = g.fExitEnd.y - FINAL_EXTRA;
+      drawQuad3([[g.fCorrectEnd.x-ROAD_W,g.fExitEnd.y],[g.fCorrectEnd.x+ROAD_W,g.fExitEnd.y],[g.fCorrectEnd.x+ROAD_W,farY],[g.fCorrectEnd.x-ROAD_W,farY]], '#8a7a86');
+      drawBigSign(g.fCorrectEnd.x, g.fExitEnd.y - FINAL_EXTRA*0.4, 'NEXT STOP...');
+    }
 
-    // player (top-down)
-    const px0 = W/2 + laneX3, py0 = FIXED_Y3;
-    px(px0-6, py0-6, 12, 12, PAL.dress);
-    px(px0-4, py0-9, 8, 6, PAL.hairD);
+    // pedina: Francesca e Gabriele insieme — sempre al centro, è il mondo che scorre
+    const px0 = W/2, py0 = FIXED_Y3;
+    px(px0-11, py0-6, 10, 12, PAL.dress);
+    px(px0-9, py0-9, 6, 6, PAL.hairD);
+    px(px0+1, py0-6, 10, 12, PAL.shirtBoy);
+    px(px0+3, py0-9, 6, 6, PAL.hairD);
     ctx.fillStyle = PAL.outline;
     ctx.font = 'bold 7px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('Francesca', px0, py0-14);
+    ctx.fillText('Francesca & Gabriele', px0, py0-14);
+    ctx.textAlign = 'left';
+
+    // progresso tappe
+    ctx.textAlign = 'right';
+    ctx.font = '8px monospace';
+    ctx.fillStyle = 'rgba(58,21,48,.6)';
+    ctx.fillText((currentForkIdx+1)+' / '+FORKS.length, W-8, 20);
     ctx.textAlign = 'left';
   }
 
@@ -1326,6 +1846,28 @@
   bindDpad(dpadRight,'right');
 
   // ============================================================
+  // FINALE — il biglietto
+  // ============================================================
+  // Testo segnaposto: domani arriva il testo definitivo, per ora serve
+  // solo a verificare impaginazione e leggibilità.
+  const FINALE_TITLE = 'BUON ANNIVERSARIO AMORE MIO <3 + 4';
+  const FINALE_BODY = 'a'.repeat(2000);
+
+  function goToFinale(){
+    state = STATE.FINALE;
+    dpad.style.display = 'none';
+    l3Hint.style.display = 'none';
+    finaleTitleEl.textContent = FINALE_TITLE;
+    finaleBodyEl.textContent = FINALE_BODY;
+    finaleScreen.classList.add('show');
+  }
+
+  finaleReplayBtn.addEventListener('click', function(){
+    finaleScreen.classList.remove('show');
+    restartWholeGame();
+  });
+
+  // ============================================================
   // RESTART / BOOT
   // ============================================================
   function restartWholeGame(){
@@ -1338,6 +1880,7 @@
     quizPanel.classList.remove('show');
     dpad.style.display='none';
     l3Hint.style.display='none';
+    finaleScreen.classList.remove('show');
     state = STATE.L1_INTRO;
     gameStarted = true;
     skipBtn.style.display='block';
