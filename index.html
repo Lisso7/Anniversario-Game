@@ -2081,7 +2081,8 @@
   }
   const stageEl = document.getElementById('stage');
   const excludedTarget = (t)=> t===skipBtn || t===ovBtn || t===ovBtn2 ||
-    t.classList.contains('optBtn') || t.classList.contains('dpadBtn');
+    t.classList.contains('optBtn') || t.classList.contains('dpadBtn') ||
+    finaleScreen.contains(t);
 
   function canvasPointFromEvent(e){
     const rect = canvas.getBoundingClientRect();
